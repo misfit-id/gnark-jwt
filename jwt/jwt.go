@@ -26,10 +26,10 @@ import (
 type Circuit struct {
 	// struct tag on a variable is optional
 	// default uses variable name and secret visibility.
-	Jwt             []uints.U8
-	ClaimedIdentity []uints.U8
+	Jwt             []uints.U8 `gnark:",private"`
+	ClaimedIdentity []uints.U8 `gnark:",private"`
 
-	IdentityOffset frontend.Variable
+	IdentityOffset frontend.Variable `gnark:",private"`
 
 	JwtHash             [32]uints.U8 `gnark:",public"`
 	ClaimedIdentityHash [32]uints.U8 `gnark:",public"`
@@ -79,35 +79,37 @@ func (circuit *Circuit) Define(api frontend.API) error {
 	}
 
 	/* the inclusion proof */
-	rawJwt := make([]frontend.Variable, len(circuit.Jwt))
-	for index, elem := range circuit.Jwt {
-		rawJwt[index] = elem.Val
-	}
+	if len(circuit.Jwt) != 0 && len(circuit.ClaimedIdentity) != 0 {
+		rawJwt := make([]frontend.Variable, len(circuit.Jwt))
+		for index, elem := range circuit.Jwt {
+			rawJwt[index] = elem.Val
+		}
 
-	maskedJwt := selector.Slice(api, circuit.IdentityOffset,
-		api.Add(circuit.IdentityOffset, len(circuit.ClaimedIdentity)),
-		rawJwt,
-	)
-
-	var identityAccumulator frontend.Variable
-	identityAccumulator = 0
-	for index, elem := range circuit.ClaimedIdentity {
-		identityAccumulator = api.Add(
-			identityAccumulator,
-			api.Mul(elem.Val, api.Add(index, circuit.IdentityOffset)),
+		maskedJwt := selector.Slice(api, circuit.IdentityOffset,
+			api.Add(circuit.IdentityOffset, len(circuit.ClaimedIdentity)),
+			rawJwt,
 		)
-	}
 
-	var maskedJwtAccumulator frontend.Variable
-	maskedJwtAccumulator = 0
-	for index, elem := range maskedJwt {
-		maskedJwtAccumulator = api.Add(
-			maskedJwtAccumulator,
-			api.Mul(elem, index),
-		)
-	}
+		var identityAccumulator frontend.Variable
+		identityAccumulator = 0
+		for index, elem := range circuit.ClaimedIdentity {
+			identityAccumulator = api.Add(
+				identityAccumulator,
+				api.Mul(elem.Val, api.Add(index, circuit.IdentityOffset)),
+			)
+		}
 
-	api.AssertIsEqual(identityAccumulator, maskedJwtAccumulator)
+		var maskedJwtAccumulator frontend.Variable
+		maskedJwtAccumulator = 0
+		for index, elem := range maskedJwt {
+			maskedJwtAccumulator = api.Add(
+				maskedJwtAccumulator,
+				api.Mul(elem, index),
+			)
+		}
+
+		api.AssertIsEqual(identityAccumulator, maskedJwtAccumulator)
+	}
 
 	return nil
 }
